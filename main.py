@@ -2,8 +2,9 @@ import sys
 import time
 import msvcrt
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from src.utils import constants
 from src.utils.logger import logger, log_execution_time
 from src.app import App
 
@@ -37,8 +38,22 @@ def wait_for_key_or_timeout(timeout=60):
 @log_execution_time
 def main():
     app = App()
-    app.check_shipping_tickets()
+    date = constants.YESTERDAY - timedelta(days=6)
+
+    # Inicia comparativo de fichas de remessa
+    # app.check_shipping_tickets(date=date)
+
+    # Inicia exportação para .xlsx
+    # app.generate_csv_files(date=date)
+
+    # Envia o e-mail com os arquivos para os destinatários especificados
+    recipients = [
+        "adriano.lipski@princesadoscampos.com.br"
+    ]
+    app.send_email(date=date, recipients=recipients)
+
     t=15
+    logger.success(f"Processo concluído com sucesso! Janela fechará sozinha em {t} segundos")
     wait_for_key_or_timeout(t)
 
 if __name__ == "__main__":
@@ -50,4 +65,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Erro durante a execução: {str(e)}")
         sys.exit(1) 
-    sys.exit(0) 
+    sys.exit(0)
