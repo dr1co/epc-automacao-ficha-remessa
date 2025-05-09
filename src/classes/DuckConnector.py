@@ -12,9 +12,10 @@ class DuckConnector():
         self.db_folder = constants.DATA_PATH
         self.csv_folder = constants.CSV_PATH
 
-        self.duck_connection = duckdb.connect(os.path.join(self.db_folder, "duck.db"))
-
         os.makedirs(self.csv_folder, exist_ok=True)
+        os.makedirs(self.db_folder, exist_ok=True)
+        
+        self.duck_connection = duckdb.connect(os.path.join(self.db_folder, "duck.db"))
 
     def upsert_data(self, df, table_name, *, include_columns=[], exclude_columns=[], update_schema=False):
         # Perform an upsert operation (update or insert) on the specified table.
