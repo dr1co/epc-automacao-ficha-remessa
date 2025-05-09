@@ -83,15 +83,16 @@ class App():
                         "nome_agencia": agency_name,
                         "cod_agencia_protheus": agency_code,
                         "num_ficha_protheus": ticket.ticket_number,
+                        "observacao": "Ficha de remessa zerada."
                     })
                     continue
 
                 # Procura ticket no TotalBus
-                totalbus_ticket = totalbus_connector.get_agency_shipping_report(date=date, agency_name=agency_name, associated_company=associated_company)
+                totalbus_tickets = totalbus_connector.get_agency_shipping_report(date=date, agency_name=agency_name)
+                observation_message = ""
                 incongruence_message = ""
 
-
-                if totalbus_ticket is None:
+                if totalbus_tickets is None:
                     logger.error(f"Houve um erro ao procurar pela ficha da agência {agency_name} no TotalBus. Pulando...")
                     incongruent_tickets.append({
                         "nome_agencia": agency_name,
@@ -102,13 +103,18 @@ class App():
                     continue
 
                 # 1 - Verifica se o valor de receita do Protheus é o mesmo do TotalBus
-                if totalbus_ticket["receipt_total"] != float(ticket.receipt):
-                    incongruence_message += ";Valor da receita está discrepante."
+                receipt_matching = False
+                for totalbus_ticket in totalbus_tickets:
+                    if round(totalbus_ticket["receipt_total"], 2) == round(float(ticket.receipt), 2):
+                        receipt_matching = True
+                
+                if not receipt_matching:
+                    incongruence_message += ";Valor da receita não está batendo."
 
                 # Procura detalhes de receitas e despesas no Protheus e TotalBus
                 protheus_details = protheus_connector.get_shipping_details(date=date, agency_code=agency_code, associated_company=associated_company)
-                totalbus_extra_events = totalbus_connector.get_agency_extra_events(date=date, agency_name=agency_name, associated_company=associated_company)
-                totalbus_cancelled_transactions = totalbus_connector.get_agency_cancelled_transactions(date=date, agency_name=agency_name, associated_company=associated_company)
+                totalbus_extra_events = totalbus_connector.get_agency_extra_events(date=date, agency_name=agency_name)
+                totalbus_cancelled_total = totalbus_connector.get_agency_cancelled_total(date=date, agency_name=agency_name)
 
                 # Cálculo do valor total cancelado ou devolvido, do Protheus e TotalBus
                 protheus_cancelled_total = 0
@@ -122,10 +128,18 @@ class App():
                 if len(protheus_find_returned_transactions) > 0:
                     protheus_cancelled_total += float(protheus_find_returned_transactions.iloc[0]["transaction_value"])
 
-                totalbus_cancelled_total = sum([transaction["total"] for transaction in totalbus_cancelled_transactions])
+                # 2 - Verifica bilhetes cancelados e devolvidos em ambas as plataformas
+                cancelled_matching = False
 
-                # 2 - Verifica bilhetes cancelados e devolvidos em ambas as plataformas 
-                if protheus_cancelled_total != totalbus_cancelled_total:
+                if protheus_cancelled_total == 0 and len(totalbus_cancelled_total) == 0:
+                    observation_message += ";Não há bilhetes cancelados e devolvidos."
+                    cancelled_matching = True
+
+                for totalbus_ticket in totalbus_cancelled_total:
+                    if round(totalbus_ticket["cancelled_total"], 2) == round(protheus_cancelled_total, 2):
+                        cancelled_matching = True
+
+                if not cancelled_matching:
                     incongruence_message += ";Valores de bilhetes cancelados e devolvidos não batem."
 
                 # 3 - Verifica se há despesas extras ou receitas extras registradas no Protheus
@@ -136,12 +150,34 @@ class App():
                         incongruence_message += f";Transação de {extra_event["description"]} não encontrada no Protheus."
                     elif float(protheus_find_extra_event.iloc[0]["transaction_value"]) != extra_event["total"]:
                         incongruence_message += f";Valor de {extra_event["description"]} não bate com o valor encontrado no Protheus."
+
+                # 4 - Verifica se há Vendas POS e Requisições no protheus
+                protheus_pos = protheus_details.loc[protheus_details["transaction_description"].str.contains("POS", na=False)]
+
+                if not protheus_pos.empty:
+                    message = ";A ficha contém Vendas POS."
+
+                    if incongruence_message != "":
+                        incongruence_message += message
+                    else:
+                        observation_message += message
+                
+                protheus_requisitions = protheus_details.loc[protheus_details["transaction_description"].str.contains("REQUISIÇÕES", na=False)]
+
+                if not protheus_requisitions.empty:
+                    message = ";A ficha contém requisições."
+
+                    if incongruence_message != "":
+                        incongruence_message += message
+                    else:
+                        observation_message += message
                 
                 if incongruence_message == "":
                     valid_tickets.append({
                         "nome_agencia": agency_name,
                         "cod_agencia_protheus": agency_code,
                         "num_ficha_protheus": ticket.ticket_number,
+                        "observacao": observation_message.replace(";", "", 1) if observation_message != "" else "Nada a declarar.",
                     })
                 else:
                     incongruent_tickets.append({
@@ -198,7 +234,7 @@ class App():
             logger.error(f"\n{tb_str}")
             return 1
     
-    def attach_file_to_mail(self, mail = None, file_path: str = None):
+    def attach_file_to_mail(self, date: datetime = None, mail = None, file_path: str = None):
         # Esta função serve para colocar arquivos de anexo no e-mail passado. Assim retornando o objeto de e-mail com o anexo.
         #
         # Se a função não receber o objeto de e-mail ou o caminho do arquivo, ela não executará, assim retornando None.
@@ -206,6 +242,12 @@ class App():
         if mail is None or file_path is None:
             logger.error("Objeto de e-mail ou caminho do arquivo não foi passado. Interrompendo a execução do programa...")
             return None
+
+        if date is None:
+            logger.warning("Nenhuma data foi passada. Utilizando D-1")
+            date = constants.YESTERDAY
+
+        date = date - timedelta(days=1)
         
         with open(file_path, "rb") as file:
             payload = MIMEBase("application", "octet-stream")
@@ -214,7 +256,7 @@ class App():
         encoders.encode_base64(payload)
         payload.add_header(
             "Content-Disposition",
-            f"attachment; filename={os.path.basename(file_path)}"
+            f"attachment; filename={date.strftime("%d-%m-%Y")}_{os.path.basename(file_path)}"
         )
         
         mail.attach(payload)
@@ -243,28 +285,29 @@ class App():
 
         logger.info("Iniciando a construção e envio do e-mail...")
 
-        date = date.strftime("%d/%m/%Y")
         user = os.getenv("SMTP_USER")
         password = os.getenv("SMTP_PASSWORD")
         body_path = os.path.join(constants.HTML_PATH, "mail_body.html")
 
         with open(body_path, "r", encoding="utf-8") as file:
-            mail_body = file.read().format(**locals())
+            mail_body = file.read().format(**{
+                "date": date.strftime("%d/%m/%Y")
+            })
 
         try:
             mail = MIMEMultipart('mixed')
             mail["From"] = f"Teste - enviado por {user}"
             mail["To"] = ", ".join(recipients)
-            mail["Subject"] = f"Conferência de fichas do dia {date}"
+            mail["Subject"] = f"Conferência de fichas do dia {date.strftime("%d/%m/%Y")}"
             mail.attach(MIMEText(mail_body, "html"))
             
             logger.info("Lendo o arquivo das fichas de remessa válidas...")
             tickets_path = os.path.join(constants.CSV_PATH, "fichas_validadas.xlsx")
-            self.attach_file_to_mail(mail=mail, file_path=tickets_path)
+            self.attach_file_to_mail(date=date, mail=mail, file_path=tickets_path)
 
             logger.info("Lendo o arquivo das fichas de remessa discrepantes...")
             tickets_path = os.path.join(constants.CSV_PATH, "fichas_discrepantes.xlsx")
-            self.attach_file_to_mail(mail=mail, file_path=tickets_path)
+            self.attach_file_to_mail(date=date, mail=mail, file_path=tickets_path)
 
             with smtplib.SMTP("smtp.office365.com", 587) as server:
                 server.ehlo()

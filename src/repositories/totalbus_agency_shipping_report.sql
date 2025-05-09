@@ -1,4 +1,5 @@
 SELECT 
+	pv.empresa_id AS associated_company,
 	SUM(cj.preciopagado) AS ticket_total,
 	SUM(cj.importetaxaembarque) AS boarding_tax_total,
 	SUM(cj.importepedagio) AS toll_tax_total,
@@ -13,5 +14,6 @@ WHERE cj.activo = 1
     AND cj.fechorventa >= '{start_date}'
     AND cj.fechorventa < '{end_date}'
     AND pv.nombpuntoventa = '{agency_name}'
-	AND pv.empresa_id = '{associated_company}'
 	AND cj.indstatusboleto <> 'C'
+GROUP BY
+	pv.empresa_id

@@ -1,4 +1,5 @@
 SELECT
+	pv.empresa_id AS associated_company,
 	tee.desctipoevento AS bill_description,
     tee.natureza AS nature,
 	sum(COALESCE(cdp.importe,0)) AS bill_value
@@ -25,11 +26,11 @@ WHERE (
 	OR cd.indreimpresion IS NULL
 )
 	AND pv.nombpuntoventa = '{agency_name}'
-	AND pv.empresa_id = '{associated_company}'
 	AND ccp.feccorte >= '{start_date}'
     AND ccp.feccorte < '{end_date}'
 GROUP BY
 	tee.desctipoevento,
-    tee.natureza
+    tee.natureza,
+	pv.empresa_id
 ORDER BY
 	tee.desctipoevento

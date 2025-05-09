@@ -38,17 +38,22 @@ def wait_for_key_or_timeout(timeout=60):
 @log_execution_time
 def main():
     app = App()
-    date = constants.YESTERDAY - timedelta(days=6)
+    date = datetime(2025, 5, 6)
 
     # Inicia comparativo de fichas de remessa
-    # app.check_shipping_tickets(date=date)
+    app.check_shipping_tickets(date=date)
 
     # Inicia exportação para .xlsx
-    # app.generate_csv_files(date=date)
+    app.generate_csv_files(date=date)
 
     # Envia o e-mail com os arquivos para os destinatários especificados
     recipients = [
-        "adriano.lipski@princesadoscampos.com.br"
+        "adriano.lipski@princesadoscampos.com.br",
+        "thelma.silva@princesadoscampos.com.br",
+        "marlon.siqueira@princesadoscampos.com.br",
+        "nayara.roca@princesadoscampos.com.br",
+        # "wesley.soares@princesadoscampos.com.br",
+        # "erinelson.santos@princesadoscampos.com.br"
     ]
     app.send_email(date=date, recipients=recipients)
 
@@ -64,5 +69,5 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logger.error(f"Erro durante a execução: {str(e)}")
-        sys.exit(1) 
+        sys.exit(1)
     sys.exit(0)
